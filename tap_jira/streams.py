@@ -154,6 +154,22 @@ class FieldStream(JiraStream):
         ),
     ).to_dict()
 
+    # Used to store the custom fields that jira has which are returned in the issues results
+    # and are needed to dynamically create the schema for the the custom fields on the issue stream
+    def parse_response(self, response: requests.Response) -> t.Iterable[dict]:
+        response = super().parse_response(response)
+        self._tap.parsedFields = []
+        for item in response:
+            if (
+                "schema" in item
+                and "type" in item["schema"]
+                and item["schema"]["type"] in ["number", "datetime", "string"]
+            ):
+                self._tap.parsedFields.append(
+                    {"id": item["id"], "type": item["schema"]["type"]}
+                )
+        return response
+
 
 class ServerInfoStream(JiraStream):
     """Server info stream.
@@ -1655,6 +1671,32 @@ class IssueStream(JiraStream):
         context: dict | None,  # noqa: ARG002
         next_page_token: t.Any | None,  # noqa: ANN401
     ) -> dict[str, t.Any]:
+
+        for item in self._tap.parsedFields:
+            field_type = item["type"]
+            field_id = item["id"]
+
+            # Map Jira field types to schema types
+            if field_type == "number":
+                schema_type = {"type": "number"}
+            elif field_type == "datetime":
+                schema_type = {"type": "string", "format": "date-time"}
+            else:  # string or default
+                schema_type = {"type": "string"}
+
+            # Add the field to the schema
+            self.schema["properties"]["fields"]["properties"][field_id] = schema_type
+
+        # Log the schema in a readable way
+        self.logger.critical("Schema after adding dynamic fields:")
+        self.logger.critical("----------------------------------------")
+        for field_name, field_type in self.schema["properties"]["fields"][
+            "properties"
+        ].items():
+            self.logger.critical(f"Field: {field_name}")
+            self.logger.critical(f"Type: {field_type}")
+            self.logger.critical("----------------------------------------")
+
         """Return a dictionary of query parameters."""
         params: dict = {}
 
@@ -1689,7 +1731,9 @@ class IssueStream(JiraStream):
 
         return params
 
-    def get_child_context(self, record: dict, context: dict | None) -> dict:  # noqa: ARG002
+    def get_child_context(
+        self, record: dict, context: dict | None
+    ) -> dict:  # noqa: ARG002
         """Return a context dictionary for child streams."""
         return {"issue_id": record["id"]}
 
@@ -2322,7 +2366,9 @@ class BoardStream(JiraStream):
         domain = self.config["domain"]
         return f"https://{domain}:443/rest/agile/1.0"
 
-    def get_child_context(self, record: dict, context: dict | None) -> dict:  # noqa: ARG002
+    def get_child_context(
+        self, record: dict, context: dict | None
+    ) -> dict:  # noqa: ARG002
         """Return a context dictionary for child streams."""
         return {"board_id": record["id"]}
 

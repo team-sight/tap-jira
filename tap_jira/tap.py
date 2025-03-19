@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import typing as t
+
 from singer_sdk import Tap
 from singer_sdk import typing as th  # JSON schema typing helpers
 
@@ -12,6 +14,7 @@ class TapJira(Tap):
     """tap-jira tap class."""
 
     name = "tap-jira"
+    parsedFields = t.Iterable[dict]
 
     config_jsonschema = th.PropertiesList(
         th.Property(
